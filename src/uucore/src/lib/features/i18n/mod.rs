@@ -92,3 +92,17 @@ pub fn get_numeric_locale() -> &'static (Locale, UEncoding) {
 pub fn get_locale_encoding() -> UEncoding {
     get_collating_locale().1
 }
+
+pub fn collating_locale_failed_to_set() -> bool {
+    static COLLATING_LOCALE_FAILED: OnceLock<bool> = OnceLock::new();
+    *COLLATING_LOCALE_FAILED.get_or_init(|| locale_failed_to_set(libc::LC_COLLATE))
+}
+
+pub fn all_locale_failed_to_set() -> bool {
+    static ALL_LOCALE_FAILED: OnceLock<bool> = OnceLock::new();
+    *ALL_LOCALE_FAILED.get_or_init(|| locale_failed_to_set(libc::LC_ALL))
+}
+
+fn locale_failed_to_set(category: libc::c_int) -> bool {
+    unsafe { libc::setlocale(category, c"".as_ptr()).is_null() }
+}

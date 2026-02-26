@@ -1752,10 +1752,6 @@ fn default_merge_batch_size() -> usize {
     }
 }
 
-fn locale_failed_to_set() -> bool {
-    matches!(env::var("LC_ALL").ok().as_deref(), Some("missing"))
-}
-
 fn key_zero_width(selector: &FieldSelector) -> bool {
     let Some(to) = &selector.to else {
         return false;
@@ -1793,11 +1789,11 @@ fn emit_debug_warnings(
     flags: &GlobalOptionFlags,
     legacy_warnings: &[LegacyKeyWarning],
 ) {
-    if locale_failed_to_set() {
+    let (locale, encoding) = i18n::get_collating_locale();
+
+    if i18n::collating_locale_failed_to_set() {
         show_error!("{}", translate!("sort-warning-failed-to-set-locale"));
     }
-
-    let (locale, encoding) = i18n::get_collating_locale();
 
     if matches!(encoding, i18n::UEncoding::Utf8) {
         let locale_as_posix = format!("{}.UTF-8", locale.to_string().replace('-', "_"));
