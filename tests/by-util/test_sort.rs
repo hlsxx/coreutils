@@ -2734,6 +2734,18 @@ fn test_locale_utf8_sort_debug_message() {
 }
 
 #[test]
+#[cfg(unix)]
+fn test_failed_to_set_locale_debug_message() {
+    new_ucmd!()
+        .env("LC_ALL", "not-valid-locale")
+        .arg("--debug")
+        .pipe_in("a\nA\nb\nB\n")
+        .succeeds()
+        .stderr_contains("failed to set locale")
+        .stderr_contains("text ordering performed using simple byte comparison");
+}
+
+#[test]
 fn test_locale_utf8_with_key_field() {
     // Regression test for issue #10909
     // Sort should not panic when using -k flag with UTF-8 locale
