@@ -2736,13 +2736,16 @@ fn test_locale_utf8_sort_debug_message() {
 #[test]
 #[cfg(unix)]
 fn test_failed_to_set_locale_debug_message() {
-    new_ucmd!()
+    let result = new_ucmd!()
         .env("LC_ALL", "not-valid-locale")
         .arg("--debug")
         .pipe_in("a\nA\nb\nB\n")
-        .succeeds()
-        .stderr_contains("failed to set locale")
-        .stderr_contains("text ordering performed using simple byte comparison");
+        .succeeds();
+
+    result.stderr_contains("text ordering performed using simple byte comparison");
+
+    #[cfg(all(unix, not(target_os = "android")))]
+    result.stderr_contains("failed to set locale");
 }
 
 #[test]
