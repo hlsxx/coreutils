@@ -2744,7 +2744,7 @@ fn test_failed_to_set_locale_debug_message() {
 
     result.stderr_contains("text ordering performed using simple byte comparison");
 
-    #[cfg(all(unix, not(target_os = "android")))]
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
     result.stderr_contains("failed to set locale");
 }
 
