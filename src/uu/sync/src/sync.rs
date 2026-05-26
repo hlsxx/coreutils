@@ -7,11 +7,7 @@
 
 use clap::{Arg, ArgAction, Command};
 #[cfg(any(target_os = "linux", target_os = "android"))]
-use nix::errno::Errno;
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use nix::fcntl::{OFlag, open};
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use nix::sys::stat::Mode;
+use rustix::fs::{open, Mode, OFlags};
 use std::path::Path;
 use uucore::display::Quotable;
 use uucore::error::{UResult, USimpleError, get_exit_code, set_exit_code};
@@ -29,14 +25,10 @@ static ARG_FILES: &str = "files";
 #[cfg(unix)]
 mod platform {
     #[cfg(any(target_os = "linux", target_os = "android"))]
-    use nix::fcntl::{FcntlArg, OFlag, fcntl};
-    use nix::unistd::sync;
+    use rustix::fs::{fcntl_setfl, fdatasync, open, syncfs, Mode, OFlags};
+    use rustix::fs::sync;
     #[cfg(any(target_os = "linux", target_os = "android"))]
-    use nix::unistd::{fdatasync, syncfs};
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    use std::fs::{File, OpenOptions};
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    use std::os::unix::fs::OpenOptionsExt;
+    use std::fs::File;
     #[cfg(any(target_os = "linux", target_os = "android"))]
     use uucore::display::Quotable;
     #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -60,14 +52,12 @@ mod platform {
     /// Logs a warning if fcntl fails but doesn't abort the operation.
     #[cfg(any(target_os = "linux", target_os = "android"))]
     fn open_and_reset_nonblock(path: &str) -> UResult<File> {
-        let f = OpenOptions::new()
-            .read(true)
-            .custom_flags(OFlag::O_NONBLOCK.bits())
-            .open(path)
+        let fd = open(path, OFlags::RDONLY | OFlags::NONBLOCK, Mode::empty())
+            .map_err(std::io::Error::from)
             .map_err_context(|| path.to_string())?;
         // Reset O_NONBLOCK flag if it was set (matches GNU behavior)
         // This is non-critical, so we log errors but don't fail
-        if let Err(e) = fcntl(&f, FcntlArg::F_SETFL(OFlag::empty())) {
+        if let Err(e) = fcntl_setfl(&fd, OFlags::empty()) {
             use std::io::{Write, stderr};
             let _ = writeln!(
                 stderr(),
@@ -76,19 +66,21 @@ mod platform {
             );
             uucore::error::set_exit_code(1);
         }
-        Ok(f)
+        Ok(File::from(fd))
     }
 
     #[cfg(any(target_os = "linux", target_os = "android"))]
     pub fn do_sync_with<F>(files: Vec<String>, op: F) -> UResult<()>
     where
-        F: Fn(File) -> Result<(), nix::Error>,
+        F: Fn(File) -> Result<(), rustix::io::Errno>,
     {
         for path in files {
             let f = open_and_reset_nonblock(&path)?;
-            op(f).map_err_context(
-                || translate!("sync-error-syncing-file", "file" => path.quote()),
-            )?;
+            op(f)
+                .map_err(std::io::Error::from)
+                .map_err_context(
+                    || translate!("sync-error-syncing-file", "file" => path.quote()),
+                )?;
         }
         Ok(())
     }
@@ -233,15 +225,16 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
     }
 
     for f in &files {
-        // Use the Nix open to be able to set the NONBLOCK flags for fifo files
+        // Use rustix open to be able to set the NONBLOCK flags for fifo files
         #[cfg(any(target_os = "linux", target_os = "android"))]
         {
+            use rustix::io::Errno;
             let path = Path::new(&f);
-            if let Err(e) = open(path, OFlag::O_NONBLOCK, Mode::empty()) {
-                if e != Errno::EACCES || (e == Errno::EACCES && path.is_dir()) {
+            if let Err(e) = open(path, OFlags::RDONLY | OFlags::NONBLOCK, Mode::empty()) {
+                if e != Errno::ACCESS || (e == Errno::ACCESS && path.is_dir()) {
                     show_error!(
                         "{}",
-                        translate!("sync-error-opening-file", "file" => f.quote(), "err" => e.desc())
+                        translate!("sync-error-opening-file", "file" => f.quote(), "err" => e.to_string())
                     );
                     set_exit_code(1);
                 }
